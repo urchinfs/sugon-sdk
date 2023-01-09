@@ -19,10 +19,8 @@ package dflog
 import (
 	"path"
 	"path/filepath"
-
 	"go.uber.org/zap"
-
-	"sugon-sdk/types"
+	"github.com/urchinfs/sugon-sdk/types"
 )
 
 type logInitMeta struct {
