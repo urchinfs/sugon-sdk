@@ -1,4 +1,4 @@
-package main
+package sugon
 
 import (
 	"bytes"
@@ -11,7 +11,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"strconv"
-	logger "sugon-sdk/dflog"
+	logger "github.com/urchinfs/sugon-sdk/dflog"
 	"time"
 )
 
