@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	logger "github.com/urchinfs/sugon-sdk/dflog"
 	"io"
 	"math"
 	"mime/multipart"
@@ -11,7 +12,6 @@ import (
 	"net/url"
 	"path/filepath"
 	"strconv"
-	logger "github.com/urchinfs/sugon-sdk/dflog"
 	"time"
 )
 
@@ -156,7 +156,7 @@ type UploadResp struct {
 }
 
 const (
-	CHUNK_SIZE = 16 * 1024 * 1024
+	CHUNK_SIZE       = 16 * 1024 * 1024
 	READ_BUFFER_SIZE = 32 * 1024
 	FILE_SHARD_LIMIT = 128 * 1024 * 1024
 )
@@ -338,7 +338,7 @@ func (sg *sgclient) GetFileMeta(path string) (*FileMeta, error) {
 			return &fileMeta, nil
 		}
 	}
-	return nil, fmt.Errorf("sugon---file meta not found 404")
+	return nil, fmt.Errorf("NoSuchKey")
 }
 
 func (sg *sgclient) FileExist(path string) (bool, error) {
@@ -534,7 +534,6 @@ func (sg *sgclient) Download(path string) (io.ReadCloser, error) {
 	return response.Body, nil
 }
 
-
 func (sg *sgclient) Upload(filePath string, reader io.Reader, totalLength int64) error {
 	if totalLength < FILE_SHARD_LIMIT {
 		logger.Infof("sugon start upload by UploadTinyFile %dB", totalLength)
@@ -549,7 +548,6 @@ func (sg *sgclient) Upload(filePath string, reader io.Reader, totalLength int64)
 		return sg.MergeBigFile(filePath)
 	}
 }
-
 
 func (sg *sgclient) UploadTinyFile(filePath string, reader io.Reader) error {
 	err := sg.SetToken()
@@ -624,7 +622,6 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 			return err
 		}
 	}
-
 
 	fileName := filepath.Base(filePath)
 	fileDir := filepath.Dir(filePath)
@@ -715,7 +712,6 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 	}
 	return nil
 }
-
 
 func (sg *sgclient) MergeBigFile(filePath string) error {
 	err := sg.SetToken()
