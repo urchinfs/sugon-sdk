@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	logger "github.com/urchinfs/sugon-sdk/dflog"
+	"github.com/urchinfs/sugon-sdk/util"
 	"io"
 	"math"
 	"mime/multipart"
@@ -524,12 +525,17 @@ func (sg *sgclient) Download(path string) (io.ReadCloser, error) {
 	request.Header.Add("token", sg.token)
 	client := &http.Client{}
 	//处理返回结果
-	response, _ := client.Do(request)
+	anyResponse, _, err := util.Run(15, 150, 4, func() (any, bool, error) {
+		response, err := client.Do(request)
+		if err == nil && response.StatusCode/100 != 2 {
+			err = fmt.Errorf("sugon---Download bad resp status %s", response.StatusCode)
+		}
+		return response, false, err
+	})
+	response := anyResponse.(*http.Response)
 	if response.StatusCode/100 != 2 {
 		return nil, fmt.Errorf("sugon---Download bad resp status %s", response.StatusCode)
 	}
-
-	//fmt.Println(status)
 
 	return response.Body, nil
 }
@@ -594,10 +600,14 @@ func (sg *sgclient) UploadTinyFile(filePath string, reader io.Reader) error {
 	request.Header.Add("Content-Type", "multipart/form-data")
 	client := &http.Client{}
 	//处理返回结果
-	response, _ := client.Do(request)
-	if response.StatusCode/100 != 2 {
-		return fmt.Errorf("sugon---Upload bad resp status %s", response.StatusCode)
-	}
+	anyResponse, _, err := util.Run(15, 150, 4, func() (any, bool, error) {
+		response, err := client.Do(request)
+		if err == nil && response.StatusCode/100 != 2 {
+			err = fmt.Errorf("sugon---Upload TinyFile bad resp status %s", response.StatusCode)
+		}
+		return response, false, err
+	})
+	response := anyResponse.(*http.Response)
 	defer response.Body.Close()
 
 	body, err := io.ReadAll(response.Body)
@@ -693,10 +703,14 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 		request.Header.Add("Content-Type", "multipart/form-data")
 		client := &http.Client{}
 		//处理返回结果
-		response, _ := client.Do(request)
-		if response.StatusCode/100 != 2 {
-			return fmt.Errorf("sugon---Upload bad resp status %s", response.StatusCode)
-		}
+		anyResponse, _, err := util.Run(15, 150, 4, func() (any, bool, error) {
+			response, err := client.Do(request)
+			if err == nil && response.StatusCode/100 != 2 {
+				err = fmt.Errorf("sugon---Upload bad resp status %s", response.StatusCode)
+			}
+			return response, false, err
+		})
+		response := anyResponse.(*http.Response)
 		defer response.Body.Close()
 
 		body, err := io.ReadAll(response.Body)
