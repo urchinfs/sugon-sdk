@@ -257,7 +257,7 @@ func (sg *sgclient) SetToken() error {
 func (sg *sgclient) GetFileList(path, keyWord string, start, limit int64) (*FileList, error) {
 	err := sg.SetToken()
 	if err != nil {
-		time.Sleep(time.Duration(1) * time.Second)
+		time.Sleep(time.Duration(15) * time.Second)
 		err = sg.SetToken()
 		if err != nil {
 			return nil, err
@@ -318,6 +318,27 @@ func (sg *sgclient) GetFileList(path, keyWord string, start, limit int64) (*File
 	return &fileListResp.Data, nil
 }
 
+func (sg *sgclient) GetAllFile(path, keyWord string, start, limit int64, fileList *[]FileMeta, depth, maxDepth int) error {
+	if depth >= maxDepth {
+		return fmt.Errorf("dir depth exceed maxDepth error depth=%d maxDepth=%d", depth, maxDepth)
+	}
+	files, _ := sg.GetFileList(path, keyWord, start, limit)
+	for _, file := range files.FileList {
+		if file.IsDirectory {
+			sg.GetAllFile(file.Path, keyWord, start, limit, fileList, depth+1, maxDepth)
+		} else {
+			*fileList = append(*fileList, file)
+		}
+	}
+	return nil
+}
+
+func (sg *sgclient) GetFileListRecursive(path, keyWord string, start, limit int64, maxDepth int) ([]FileMeta, error) {
+	var fileList []FileMeta
+	err := sg.GetAllFile(path, keyWord, start, limit, &fileList, 0, maxDepth)
+	return fileList, err
+}
+
 func (sg *sgclient) GetFilesMeta(path, keyWord string, start, limit int64) ([]FileMeta, error) {
 	fileList, err := sg.GetFileList(path, keyWord, start, limit)
 	if err != nil {
@@ -347,7 +368,7 @@ func (sg *sgclient) FileExist(path string) (bool, error) {
 	err := sg.SetToken()
 	if err != nil {
 		//logger.Errorf("sugon---SetTokenError %s", err.Error())
-		time.Sleep(time.Duration(1) * time.Second)
+		time.Sleep(time.Duration(15) * time.Second)
 		err = sg.SetToken()
 		if err != nil {
 			return false, err
@@ -400,7 +421,7 @@ func (sg *sgclient) FileExist(path string) (bool, error) {
 func (sg *sgclient) CreateDir(path string) (bool, error) {
 	err := sg.SetToken()
 	if err != nil {
-		time.Sleep(time.Duration(1) * time.Second)
+		time.Sleep(time.Duration(15) * time.Second)
 		err = sg.SetToken()
 		if err != nil {
 			return false, err
@@ -449,7 +470,7 @@ func (sg *sgclient) CreateDir(path string) (bool, error) {
 func (sg *sgclient) DeleteFile(path string) (bool, error) {
 	err := sg.SetToken()
 	if err != nil {
-		time.Sleep(time.Duration(1) * time.Second)
+		time.Sleep(time.Duration(15) * time.Second)
 		err = sg.SetToken()
 		if err != nil {
 			return false, err
@@ -498,7 +519,7 @@ func (sg *sgclient) DeleteFile(path string) (bool, error) {
 func (sg *sgclient) Download(path string) (io.ReadCloser, error) {
 	err := sg.SetToken()
 	if err != nil {
-		time.Sleep(time.Duration(1) * time.Second)
+		time.Sleep(time.Duration(15) * time.Second)
 		err = sg.SetToken()
 		if err != nil {
 			return nil, err
@@ -558,7 +579,7 @@ func (sg *sgclient) Upload(filePath string, reader io.Reader, totalLength int64)
 func (sg *sgclient) UploadTinyFile(filePath string, reader io.Reader) error {
 	err := sg.SetToken()
 	if err != nil {
-		time.Sleep(time.Duration(1) * time.Second)
+		time.Sleep(time.Duration(15) * time.Second)
 		err = sg.SetToken()
 		if err != nil {
 			return err
@@ -626,7 +647,7 @@ func (sg *sgclient) UploadTinyFile(filePath string, reader io.Reader) error {
 func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength int64) error {
 	err := sg.SetToken()
 	if err != nil {
-		time.Sleep(time.Duration(1) * time.Second)
+		time.Sleep(time.Duration(15) * time.Second)
 		err = sg.SetToken()
 		if err != nil {
 			return err
@@ -730,7 +751,7 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 func (sg *sgclient) MergeBigFile(filePath string) error {
 	err := sg.SetToken()
 	if err != nil {
-		time.Sleep(time.Duration(1) * time.Second)
+		time.Sleep(time.Duration(15) * time.Second)
 		err = sg.SetToken()
 		if err != nil {
 			return err
