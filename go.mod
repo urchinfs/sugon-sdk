@@ -5,6 +5,7 @@ go 1.19
 require (
 	go.uber.org/atomic v1.10.0
 	go.uber.org/zap v1.23.0
+	golang.org/x/exp v0.0.0-20230321023759-10a507213a29
 	golang.org/x/sys v0.2.0
 	google.golang.org/grpc v1.51.0
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0

@@ -21,6 +21,9 @@ type Sgclient interface {
 	// get file list for path.
 	GetFileList(path, keyWord string, start, limit int64) (*FileList, error)
 
+	// get file list recursively
+	GetFileListRecursive(path, keyWord string, start, limit int64, maxDepth int) ([]FileMeta, error)
+
 	// check file or directory exist.
 	FileExist(path string) (bool, error)
 
