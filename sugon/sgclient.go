@@ -314,7 +314,7 @@ func (sg *sgclient) GetFileList(path, keyWord string, start, limit int64) (*File
 	defer client.CloseIdleConnections()
 	if fileListResp.Code != "0" {
 		if fileListResp.Code == "911020" {
-			return nil, fmt.Errorf("404 NOT FOUND")
+			return nil, fmt.Errorf("NoSuchKey")
 		}
 		return nil, fmt.Errorf("GetFileList failed for path = %s, %s", path, fileListResp.Msg)
 	}
