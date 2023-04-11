@@ -464,7 +464,7 @@ func (sg *sgclient) CreateDir(path string) (bool, error) {
 	}
 	defer client.CloseIdleConnections()
 	if makeDirResp.Code != "0" && makeDirResp.Code != "911021" {
-		return false, fmt.Errorf("sugon---FileExist check failed, path=%s, Code=%s, Message=%s", path, makeDirResp.Code, makeDirResp.Msg)
+		return false, fmt.Errorf("sugon---CreateDir failed, path=%s, Code=%s, Message=%s", path, makeDirResp.Code, makeDirResp.Msg)
 	}
 
 	return true, nil
@@ -513,7 +513,7 @@ func (sg *sgclient) DeleteFile(path string) (bool, error) {
 	}
 	defer client.CloseIdleConnections()
 	if makeDirResp.Code != "0" {
-		return false, fmt.Errorf("sugon---FileExist check failed, path=%s, Code=%s, Message=%s", path, makeDirResp.Code, makeDirResp.Msg)
+		return false, fmt.Errorf("sugon---DeleteFile failed, path=%s, Code=%s, Message=%s", path, makeDirResp.Code, makeDirResp.Msg)
 	}
 
 	return true, nil
