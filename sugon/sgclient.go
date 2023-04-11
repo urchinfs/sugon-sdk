@@ -510,7 +510,15 @@ func (sg *sgclient) DeleteFile(path string) (bool, error) {
 	request.Header.Add("token", sg.token)
 	client := &http.Client{}
 	//处理返回结果
-	response, _ := client.Do(request)
+	anyResponse, _, err := util.Run(15, 150, 4, func() (any, bool, error) {
+		logger.Infof("sugon retry %s", uri.String())
+		response, err := client.Do(request)
+		if err == nil && response.StatusCode/100 != 2 {
+			err = fmt.Errorf("sugon---DeleteFile bad resp status %s", response.StatusCode)
+		}
+		return response, false, err
+	})
+	response := anyResponse.(*http.Response)
 	if response.StatusCode/100 != 2 {
 		return false, fmt.Errorf("sugon---DeleteFile bad resp status %s", response.StatusCode)
 	}
@@ -560,6 +568,7 @@ func (sg *sgclient) Download(path string) (io.ReadCloser, error) {
 	client := &http.Client{}
 	//处理返回结果
 	anyResponse, _, err := util.Run(15, 150, 4, func() (any, bool, error) {
+		logger.Infof("sugon retry %s", uri.String())
 		response, err := client.Do(request)
 		if err == nil && response.StatusCode/100 != 2 {
 			err = fmt.Errorf("sugon---Download bad resp status %s", response.StatusCode)
@@ -635,6 +644,7 @@ func (sg *sgclient) UploadTinyFile(filePath string, reader io.Reader) error {
 	client := &http.Client{}
 	//处理返回结果
 	anyResponse, _, err := util.Run(15, 150, 4, func() (any, bool, error) {
+		logger.Infof("sugon retry %s", uri.String())
 		response, err := client.Do(request)
 		if err == nil && response.StatusCode/100 != 2 {
 			err = fmt.Errorf("sugon---Upload TinyFile bad resp status %s", response.StatusCode)
@@ -738,6 +748,7 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 		client := &http.Client{}
 		//处理返回结果
 		anyResponse, _, err := util.Run(15, 150, 4, func() (any, bool, error) {
+			logger.Infof("sugon retry %s", uri.String())
 			response, err := client.Do(request)
 			if err == nil && response.StatusCode/100 != 2 {
 				err = fmt.Errorf("sugon---Upload bad resp status %s", response.StatusCode)
@@ -797,7 +808,15 @@ func (sg *sgclient) MergeBigFile(filePath string) error {
 	request.Header.Add("token", sg.token)
 	client := &http.Client{}
 	//处理返回结果
-	response, _ := client.Do(request)
+	anyResponse, _, err := util.Run(15, 150, 4, func() (any, bool, error) {
+		logger.Infof("sugon retry %s", uri.String())
+		response, err := client.Do(request)
+		if err == nil && response.StatusCode/100 != 2 {
+			err = fmt.Errorf("sugon---MergeBigFile bad resp status %s", response.StatusCode)
+		}
+		return response, false, err
+	})
+	response := anyResponse.(*http.Response)
 	if response.StatusCode/100 != 2 {
 		return fmt.Errorf("sugon---Upload bad resp status %s", response.StatusCode)
 	}
