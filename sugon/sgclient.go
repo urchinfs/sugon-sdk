@@ -325,7 +325,11 @@ func (sg *sgclient) GetAllFile(path, keyWord string, start, limit int64, fileLis
 	if depth >= maxDepth {
 		return fmt.Errorf("dir depth exceed maxDepth error depth=%d maxDepth=%d", depth, maxDepth)
 	}
-	files, _ := sg.GetFileList(path, keyWord, start, limit)
+	files, err := sg.GetFileList(path, keyWord, start, limit)
+	if err != nil {
+		logger.Errorf("sugon GetAllFile GetFileList error %s", err.Error())
+		return err
+	}
 	for _, file := range files.FileList {
 		if file.IsDirectory {
 			sg.GetAllFile(file.Path, keyWord, start, limit, fileList, depth+1, maxDepth)
@@ -333,6 +337,12 @@ func (sg *sgclient) GetAllFile(path, keyWord string, start, limit int64, fileLis
 			*fileList = append(*fileList, file)
 		}
 	}
+	dirMeta, err := sg.GetFileMeta(path)
+	if err != nil {
+		logger.Errorf("sugon GetAllFile GetFileMeta error %s", err.Error())
+		return err
+	}
+	*fileList = append(*fileList, *dirMeta)
 	return nil
 }
 
@@ -744,7 +754,7 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 		}
 		defer client.CloseIdleConnections()
 		if uploadResp.Code != "0" {
-			return fmt.Errorf("sugon Upload failed, path=%s, Code=%s, Message=%s", filePath, uploadResp.Code, uploadResp.Msg)
+			return fmt.Errorf("sugon Upload failed, path=%s, totalLength=%d, currentChunkSize=%d, chunkSize=%d, Code=%s, Message=%s", filePath, totalLength, length, CHUNK_SIZE, uploadResp.Code, uploadResp.Msg)
 		}
 
 	}
