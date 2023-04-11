@@ -484,7 +484,7 @@ func (sg *sgclient) DeleteFile(path string) (bool, error) {
 	requestUrl := sg.apiEnv + "/efile/openapi/v2/file/remove"
 
 	data := make(url.Values)
-	data["path"] = []string{path}
+	data["paths"] = []string{path}
 	data["recursive"] = []string{"true"}
 	uri, _ := url.Parse(requestUrl)
 	values := uri.Query()
