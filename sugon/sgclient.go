@@ -733,7 +733,7 @@ func (sg *sgclient) UploadTinyFile(filePath string, reader io.Reader) error {
 	}
 	uri.RawQuery = data.Encode()
 
-	anyResponse, _, err := util.Run(15, 150, 4, func() (any, bool, error) {
+	_, _, err = util.Run(15, 150, 4, func() (any, bool, error) {
 		//提交请求
 		request, err := http.NewRequest(http.MethodPost, uri.String(), bodyBuf)
 		if err != nil {
@@ -745,36 +745,31 @@ func (sg *sgclient) UploadTinyFile(filePath string, reader io.Reader) error {
 		client := &http.Client{}
 		//处理返回结果
 		response, err := client.Do(request)
+		if response == nil {
+			return nil, false, fmt.Errorf("sugon---response nil")
+		}
 		defer client.CloseIdleConnections()
 		if err == nil && response.StatusCode/100 != 2 {
 			err = fmt.Errorf("sugon---Upload TinyFile bad resp status %s", response.StatusCode)
 		}
-		return response, false, err
+		defer response.Body.Close()
+
+		body, err := io.ReadAll(response.Body)
+		var uploadResp UploadResp
+		if err != nil {
+			return nil, false, err
+		}
+		err = json.Unmarshal((body), &uploadResp)
+		if err != nil {
+			return nil, false, err
+		}
+
+		if uploadResp.Code != "0" {
+			return nil, false, fmt.Errorf("sugon---Upload failed, path=%s, Code=%s, Message=%s", filePath, uploadResp.Code, uploadResp.Msg)
+		}
+		return nil, false, err
 	})
-	if anyResponse == nil {
-		return fmt.Errorf("sugon---response nil")
-	}
-	if err != nil {
-		return err
-	}
-	response := anyResponse.(*http.Response)
-	defer response.Body.Close()
-
-	body, err := io.ReadAll(response.Body)
-	var uploadResp UploadResp
-	if err != nil {
-		return err
-	}
-	err = json.Unmarshal((body), &uploadResp)
-	if err != nil {
-		return err
-	}
-
-	if uploadResp.Code != "0" {
-		return fmt.Errorf("sugon---Upload failed, path=%s, Code=%s, Message=%s", filePath, uploadResp.Code, uploadResp.Msg)
-	}
-
-	return nil
+	return err
 }
 
 func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength int64) error {
@@ -836,7 +831,6 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 		data["totalChunks"] = []string{strconv.FormatInt(int64(chunkCount), 10)}
 		data["currentChunkSize"] = []string{strconv.FormatInt(int64(length), 10)}
 		data["chunkNumber"] = []string{strconv.FormatInt(int64(chunkNumber), 10)}
-		chunkNumber += 1
 
 		uri, _ := url.Parse(requestUrl)
 		values := uri.Query()
@@ -847,7 +841,7 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 		}
 		uri.RawQuery = data.Encode()
 
-		anyResponse, _, err := util.Run(15, 150, 4, func() (any, bool, error) {
+		_, _, err = util.Run(15, 150, 4, func() (any, bool, error) {
 			//提交请求
 			request, err := http.NewRequest(http.MethodPost, uri.String(), bodyBuf)
 			if err != nil {
@@ -859,35 +853,36 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 			client := &http.Client{}
 			//处理返回结果
 			response, err := client.Do(request)
+			if response == nil {
+				return nil, false, fmt.Errorf("sugon---response nil")
+			}
 			defer client.CloseIdleConnections()
 			if err == nil && response.StatusCode/100 != 2 {
 				err = fmt.Errorf("sugon---Upload bad resp status %s", response.StatusCode)
 			}
+			defer response.Body.Close()
+
+			body, err := io.ReadAll(response.Body)
+			var uploadResp UploadResp
+			if err != nil {
+				return nil, false, err
+			}
+			err = json.Unmarshal((body), &uploadResp)
+			if err != nil {
+				return nil, false, err
+			}
+
+			if uploadResp.Code != "0" {
+				return nil, false, fmt.Errorf("sugon---Upload failed, path=%s, totalLength=%d, currentChunkSize=%d"+
+					", chunkSize=%d, Code=%s, Message=%s, chunkNumber=%d, dataBuffer=%d, pipeBuffer=%d n=%d",
+					filePath, totalLength, length, CHUNK_SIZE, uploadResp.Code, uploadResp.Msg, chunkNumber, len(dataBuffer), len(pipeBuffer), n)
+			}
 			return response, false, err
 		})
-		if anyResponse == nil {
-			return fmt.Errorf("sugon---response nil")
-		}
 		if err != nil {
 			return err
 		}
-		response := anyResponse.(*http.Response)
-		defer response.Body.Close()
-
-		body, err := io.ReadAll(response.Body)
-		var uploadResp UploadResp
-		if err != nil {
-			return err
-		}
-		err = json.Unmarshal((body), &uploadResp)
-		if err != nil {
-			return err
-		}
-
-		if uploadResp.Code != "0" {
-			return fmt.Errorf("sugon---Upload failed, path=%s, totalLength=%d, currentChunkSize=%d, chunkSize=%d, Code=%s, Message=%s", filePath, totalLength, length, CHUNK_SIZE, uploadResp.Code, uploadResp.Msg)
-		}
-
+		chunkNumber += 1
 	}
 	return nil
 }
@@ -920,7 +915,7 @@ func (sg *sgclient) MergeBigFile(filePath string) error {
 	}
 	uri.RawQuery = data.Encode()
 
-	anyResponse, _, err := util.Run(15, 150, 4, func() (any, bool, error) {
+	_, _, err = util.Run(15, 150, 4, func() (any, bool, error) {
 		//提交请求
 		request, err := http.NewRequest(http.MethodPost, uri.String(), nil)
 		if err != nil {
@@ -930,38 +925,33 @@ func (sg *sgclient) MergeBigFile(filePath string) error {
 		client := &http.Client{}
 		//处理返回结果
 		response, err := client.Do(request)
+		if response == nil {
+			return nil, false, fmt.Errorf("sugon---response nil")
+		}
 		defer client.CloseIdleConnections()
 		if err == nil && response.StatusCode/100 != 2 {
 			err = fmt.Errorf("sugon---MergeBigFile bad resp status %s", response.StatusCode)
 		}
+		if response.StatusCode/100 != 2 {
+			return nil, false, fmt.Errorf("sugon---Upload bad resp status %s", response.StatusCode)
+		}
+		defer response.Body.Close()
+
+		body, err := io.ReadAll(response.Body)
+		if err != nil {
+			return nil, false, err
+		}
+		var uploadResp UploadResp
+		err = json.Unmarshal((body), &uploadResp)
+		if err != nil {
+			return nil, false, err
+		}
+		if uploadResp.Code != "0" {
+			return nil, false, fmt.Errorf("sugon---Merge failed, path=%s, Code=%s, Message=%s", filePath, uploadResp.Code, uploadResp.Msg)
+		}
 		return response, false, err
 	})
-	if anyResponse == nil {
-		return fmt.Errorf("sugon---response nil")
-	}
-	if err != nil {
-		return err
-	}
-	response := anyResponse.(*http.Response)
-	if response.StatusCode/100 != 2 {
-		return fmt.Errorf("sugon---Upload bad resp status %s", response.StatusCode)
-	}
-	defer response.Body.Close()
-
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		return err
-	}
-	var uploadResp UploadResp
-	err = json.Unmarshal((body), &uploadResp)
-	if err != nil {
-		return err
-	}
-	if uploadResp.Code != "0" {
-		return fmt.Errorf("sugon---Merge failed, path=%s, Code=%s, Message=%s", filePath, uploadResp.Code, uploadResp.Msg)
-	}
-
-	return nil
+	return err
 }
 
 func (sg *sgclient) GetSignURL(path string) string {
