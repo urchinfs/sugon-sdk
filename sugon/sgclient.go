@@ -175,7 +175,7 @@ func (sg *sgclient) isTokenValid() (bool, error) {
 	url := sg.secEnv + "/ac/openapi/v2/tokens/state"
 
 	//处理返回结果
-	anyResponse, _, err := util.Run(15, 100, 4, func() (any, bool, error) {
+	anyResponse, _, err := util.Run(15, 100, 4, "isTokenValid", func() (any, bool, error) {
 		request, err := http.NewRequest(http.MethodGet, url, nil)
 		if err != nil {
 			return nil, false, err
@@ -225,7 +225,7 @@ func (sg *sgclient) SetToken() error {
 	defer client.CloseIdleConnections()
 	url := sg.secEnv + "/ac/openapi/v2/tokens"
 
-	anyResponse, _, err := util.Run(15, 100, 4, func() (any, bool, error) {
+	anyResponse, _, err := util.Run(15, 100, 4, "SetToken", func() (any, bool, error) {
 		request, err := http.NewRequest(http.MethodPost, url, nil)
 		if err != nil {
 			return nil, false, err
@@ -317,7 +317,7 @@ func (sg *sgclient) GetFileList(path, keyWord string, start, limit int64) (*File
 	}
 	uri.RawQuery = data.Encode()
 
-	anyResponse, _, err := util.Run(15, 100, 4, func() (any, bool, error) {
+	anyResponse, _, err := util.Run(15, 100, 4, "GetFileList", func() (any, bool, error) {
 		//提交请求
 		request, err := http.NewRequest(http.MethodGet, uri.String(), nil)
 		if err != nil {
@@ -443,7 +443,7 @@ func (sg *sgclient) FileExist(path string) (bool, error) {
 		}
 	}
 	uri.RawQuery = data.Encode()
-	anyResponse, _, err := util.Run(15, 100, 4, func() (any, bool, error) {
+	anyResponse, _, err := util.Run(15, 100, 4, "FileExist", func() (any, bool, error) {
 		//提交请求
 		request, err := http.NewRequest(http.MethodPost, uri.String(), nil)
 		if err != nil {
@@ -515,7 +515,7 @@ func (sg *sgclient) CreateDir(path string) (bool, error) {
 	}
 	uri.RawQuery = data.Encode()
 
-	anyResponse, _, err := util.Run(15, 100, 4, func() (any, bool, error) {
+	anyResponse, _, err := util.Run(15, 100, 4, "CreateDir", func() (any, bool, error) {
 		//提交请求
 		request, err := http.NewRequest(http.MethodPost, uri.String(), nil)
 		if err != nil {
@@ -585,7 +585,7 @@ func (sg *sgclient) DeleteFile(path string) (bool, error) {
 	}
 	uri.RawQuery = data.Encode()
 
-	anyResponse, _, err := util.Run(15, 100, 4, func() (any, bool, error) {
+	anyResponse, _, err := util.Run(15, 100, 4, "DeleteFile", func() (any, bool, error) {
 		//提交请求
 		request, err := http.NewRequest(http.MethodPost, uri.String(), nil)
 		if err != nil {
@@ -653,7 +653,7 @@ func (sg *sgclient) Download(path string) (io.ReadCloser, error) {
 	}
 	uri.RawQuery = data.Encode()
 
-	anyResponse, _, err := util.Run(15, 100, 4, func() (any, bool, error) {
+	anyResponse, _, err := util.Run(15, 100, 4, "Download", func() (any, bool, error) {
 		//提交请求
 		request, err := http.NewRequest(http.MethodGet, uri.String(), nil)
 		if err != nil {
@@ -732,7 +732,7 @@ func (sg *sgclient) UploadTinyFile(filePath string, reader io.Reader) error {
 	}
 	uri.RawQuery = data.Encode()
 
-	_, _, err = util.Run(15, 100, 4, func() (any, bool, error) {
+	_, _, err = util.Run(15, 100, 4, "UploadTinyFile", func() (any, bool, error) {
 		//提交请求
 		request, err := http.NewRequest(http.MethodPost, uri.String(), bodyBuf)
 		if err != nil {
@@ -843,7 +843,7 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 		}
 		uri.RawQuery = data.Encode()
 
-		_, _, err = util.Run(15, 100, 4, func() (any, bool, error) {
+		_, _, err = util.Run(15, 100, 4, "UploadBigFile", func() (any, bool, error) {
 			//提交请求
 			request, err := http.NewRequest(http.MethodPost, uri.String(), bodyBuf)
 			if err != nil {
@@ -857,9 +857,11 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 			response, err := client.Do(request)
 			defer client.CloseIdleConnections()
 			if err != nil {
+				logger.Errorf("sugon---UploadBigFile error=%s", err.Error())
 				return nil, false, err
 			}
 			if response == nil {
+				logger.Errorf("sugon---UploadBigFile response nil")
 				return nil, false, fmt.Errorf("sugon---response nil")
 			}
 			if response.StatusCode/100 != 2 {
@@ -870,6 +872,7 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 			body, err := io.ReadAll(response.Body)
 			var uploadResp UploadResp
 			if err != nil {
+				logger.Errorf("sugon---UploadBigFile error = %s", err.Error())
 				return nil, false, err
 			}
 			err = json.Unmarshal((body), &uploadResp)
@@ -919,7 +922,7 @@ func (sg *sgclient) MergeBigFile(filePath string) error {
 	}
 	uri.RawQuery = data.Encode()
 
-	_, _, err = util.Run(15, 100, 4, func() (any, bool, error) {
+	_, _, err = util.Run(15, 100, 4, "MergeBigFile", func() (any, bool, error) {
 		//提交请求
 		request, err := http.NewRequest(http.MethodPost, uri.String(), nil)
 		if err != nil {
