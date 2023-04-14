@@ -175,7 +175,7 @@ func (sg *sgclient) isTokenValid() (bool, error) {
 	url := sg.secEnv + "/ac/openapi/v2/tokens/state"
 
 	//处理返回结果
-	anyResponse, _, err := util.Run(15, 150, 4, func() (any, bool, error) {
+	anyResponse, _, err := util.Run(15, 100, 4, func() (any, bool, error) {
 		request, err := http.NewRequest(http.MethodGet, url, nil)
 		if err != nil {
 			return nil, false, err
@@ -225,7 +225,7 @@ func (sg *sgclient) SetToken() error {
 	defer client.CloseIdleConnections()
 	url := sg.secEnv + "/ac/openapi/v2/tokens"
 
-	anyResponse, _, err := util.Run(15, 150, 4, func() (any, bool, error) {
+	anyResponse, _, err := util.Run(15, 100, 4, func() (any, bool, error) {
 		request, err := http.NewRequest(http.MethodPost, url, nil)
 		if err != nil {
 			return nil, false, err
@@ -317,7 +317,7 @@ func (sg *sgclient) GetFileList(path, keyWord string, start, limit int64) (*File
 	}
 	uri.RawQuery = data.Encode()
 
-	anyResponse, _, err := util.Run(15, 150, 4, func() (any, bool, error) {
+	anyResponse, _, err := util.Run(15, 100, 4, func() (any, bool, error) {
 		//提交请求
 		request, err := http.NewRequest(http.MethodGet, uri.String(), nil)
 		if err != nil {
@@ -443,7 +443,7 @@ func (sg *sgclient) FileExist(path string) (bool, error) {
 		}
 	}
 	uri.RawQuery = data.Encode()
-	anyResponse, _, err := util.Run(15, 150, 4, func() (any, bool, error) {
+	anyResponse, _, err := util.Run(15, 100, 4, func() (any, bool, error) {
 		//提交请求
 		request, err := http.NewRequest(http.MethodPost, uri.String(), nil)
 		if err != nil {
@@ -515,7 +515,7 @@ func (sg *sgclient) CreateDir(path string) (bool, error) {
 	}
 	uri.RawQuery = data.Encode()
 
-	anyResponse, _, err := util.Run(15, 150, 4, func() (any, bool, error) {
+	anyResponse, _, err := util.Run(15, 100, 4, func() (any, bool, error) {
 		//提交请求
 		request, err := http.NewRequest(http.MethodPost, uri.String(), nil)
 		if err != nil {
@@ -585,7 +585,7 @@ func (sg *sgclient) DeleteFile(path string) (bool, error) {
 	}
 	uri.RawQuery = data.Encode()
 
-	anyResponse, _, err := util.Run(15, 150, 4, func() (any, bool, error) {
+	anyResponse, _, err := util.Run(15, 100, 4, func() (any, bool, error) {
 		//提交请求
 		request, err := http.NewRequest(http.MethodPost, uri.String(), nil)
 		if err != nil {
@@ -653,7 +653,7 @@ func (sg *sgclient) Download(path string) (io.ReadCloser, error) {
 	}
 	uri.RawQuery = data.Encode()
 
-	anyResponse, _, err := util.Run(15, 150, 4, func() (any, bool, error) {
+	anyResponse, _, err := util.Run(15, 100, 4, func() (any, bool, error) {
 		//提交请求
 		request, err := http.NewRequest(http.MethodGet, uri.String(), nil)
 		if err != nil {
@@ -663,23 +663,22 @@ func (sg *sgclient) Download(path string) (io.ReadCloser, error) {
 		client := &http.Client{}
 		//处理返回结果
 		response, err := client.Do(request)
+		if err != nil {
+			return nil, false, err
+		}
+		if response == nil {
+			return nil, false, fmt.Errorf("sugon nil response err")
+		}
 		defer client.CloseIdleConnections()
-		if err == nil && response.StatusCode/100 != 2 {
+		if response.StatusCode/100 != 2 {
 			err = fmt.Errorf("sugon---Download bad resp status %s", response.StatusCode)
 		}
 		return response, false, err
 	})
-	if anyResponse == nil {
-		return nil, fmt.Errorf("sugon---response nil")
-	}
 	if err != nil {
 		return nil, err
 	}
 	response := anyResponse.(*http.Response)
-	if response.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("sugon---Download bad resp status %s", response.StatusCode)
-	}
-
 	return response.Body, nil
 }
 
@@ -733,7 +732,7 @@ func (sg *sgclient) UploadTinyFile(filePath string, reader io.Reader) error {
 	}
 	uri.RawQuery = data.Encode()
 
-	_, _, err = util.Run(15, 150, 4, func() (any, bool, error) {
+	_, _, err = util.Run(15, 100, 4, func() (any, bool, error) {
 		//提交请求
 		request, err := http.NewRequest(http.MethodPost, uri.String(), bodyBuf)
 		if err != nil {
@@ -745,11 +744,14 @@ func (sg *sgclient) UploadTinyFile(filePath string, reader io.Reader) error {
 		client := &http.Client{}
 		//处理返回结果
 		response, err := client.Do(request)
+		defer client.CloseIdleConnections()
+		if err != nil {
+			return nil, false, err
+		}
 		if response == nil {
 			return nil, false, fmt.Errorf("sugon---response nil")
 		}
-		defer client.CloseIdleConnections()
-		if err == nil && response.StatusCode/100 != 2 {
+		if response.StatusCode/100 != 2 {
 			err = fmt.Errorf("sugon---Upload TinyFile bad resp status %s", response.StatusCode)
 		}
 		defer response.Body.Close()
@@ -841,7 +843,7 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 		}
 		uri.RawQuery = data.Encode()
 
-		_, _, err = util.Run(15, 150, 4, func() (any, bool, error) {
+		_, _, err = util.Run(15, 100, 4, func() (any, bool, error) {
 			//提交请求
 			request, err := http.NewRequest(http.MethodPost, uri.String(), bodyBuf)
 			if err != nil {
@@ -853,11 +855,14 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 			client := &http.Client{}
 			//处理返回结果
 			response, err := client.Do(request)
+			defer client.CloseIdleConnections()
+			if err != nil {
+				return nil, false, err
+			}
 			if response == nil {
 				return nil, false, fmt.Errorf("sugon---response nil")
 			}
-			defer client.CloseIdleConnections()
-			if err == nil && response.StatusCode/100 != 2 {
+			if response.StatusCode/100 != 2 {
 				err = fmt.Errorf("sugon---Upload bad resp status %s", response.StatusCode)
 			}
 			defer response.Body.Close()
@@ -871,7 +876,6 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 			if err != nil {
 				return nil, false, err
 			}
-
 			if uploadResp.Code != "0" {
 				return nil, false, fmt.Errorf("sugon---Upload failed, path=%s, totalLength=%d, currentChunkSize=%d"+
 					", chunkSize=%d, Code=%s, Message=%s, chunkNumber=%d, dataBuffer=%d, pipeBuffer=%d n=%d",
@@ -915,7 +919,7 @@ func (sg *sgclient) MergeBigFile(filePath string) error {
 	}
 	uri.RawQuery = data.Encode()
 
-	_, _, err = util.Run(15, 150, 4, func() (any, bool, error) {
+	_, _, err = util.Run(15, 100, 4, func() (any, bool, error) {
 		//提交请求
 		request, err := http.NewRequest(http.MethodPost, uri.String(), nil)
 		if err != nil {
@@ -923,17 +927,17 @@ func (sg *sgclient) MergeBigFile(filePath string) error {
 		}
 		request.Header.Add("token", sg.token)
 		client := &http.Client{}
+		defer client.CloseIdleConnections()
 		//处理返回结果
 		response, err := client.Do(request)
+		if err != nil {
+			return nil, false, err
+		}
 		if response == nil {
 			return nil, false, fmt.Errorf("sugon---response nil")
 		}
-		defer client.CloseIdleConnections()
-		if err == nil && response.StatusCode/100 != 2 {
-			err = fmt.Errorf("sugon---MergeBigFile bad resp status %s", response.StatusCode)
-		}
 		if response.StatusCode/100 != 2 {
-			return nil, false, fmt.Errorf("sugon---Upload bad resp status %s", response.StatusCode)
+			err = fmt.Errorf("sugon---MergeBigFile bad resp status %s", response.StatusCode)
 		}
 		defer response.Body.Close()
 
