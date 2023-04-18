@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"path/filepath"
 	"strconv"
-	"time"
 )
 
 type Sgclient interface {
@@ -169,21 +168,30 @@ func (sg *sgclient) isTokenValid() (bool, error) {
 	if sg.token == "" {
 		return false, nil
 	}
-	//生成client 参数为默认
-	client := &http.Client{}
-	defer client.CloseIdleConnections()
-	url := sg.secEnv + "/ac/openapi/v2/tokens/state"
 
 	//处理返回结果
 	anyResponse, _, err := util.Run(15, 100, 4, "isTokenValid", func() (any, bool, error) {
-		request, err := http.NewRequest(http.MethodGet, url, nil)
+
+		response, err := util.LoopDoRequest(func() (*http.Response, error) {
+			//生成client 参数为默认
+			client := &http.Client{}
+			defer client.CloseIdleConnections()
+			url := sg.secEnv + "/ac/openapi/v2/tokens/state"
+			request, err := http.NewRequest(http.MethodGet, url, nil)
+			if err != nil {
+				return nil, err
+			}
+			request.Header.Add("token", sg.token)
+			return client.Do(request)
+		})
 		if err != nil {
+			logger.Errorf("sugon---error=%s", err.Error())
 			return nil, false, err
 		}
-		request.Header.Add("token", sg.token)
-		response, err := client.Do(request)
-		defer client.CloseIdleConnections()
-		if err == nil && response.StatusCode/100 != 2 {
+		if response == nil {
+			return nil, false, fmt.Errorf("sugon---response nil")
+		}
+		if response.StatusCode/100 != 2 {
 			err = fmt.Errorf("sugon---isTokenValid bad resp status %s", response.StatusCode)
 		}
 		return response, false, err
@@ -221,30 +229,34 @@ func (sg *sgclient) SetToken() error {
 	if valid {
 		return nil
 	}
-	client := &http.Client{}
-	defer client.CloseIdleConnections()
-	url := sg.secEnv + "/ac/openapi/v2/tokens"
 
 	anyResponse, _, err := util.Run(15, 100, 4, "SetToken", func() (any, bool, error) {
-		request, err := http.NewRequest(http.MethodPost, url, nil)
+		response, err := util.LoopDoRequest(func() (*http.Response, error) {
+			client := &http.Client{}
+			defer client.CloseIdleConnections()
+			url := sg.secEnv + "/ac/openapi/v2/tokens"
+			request, err := http.NewRequest(http.MethodPost, url, nil)
+			if err != nil {
+				return nil, err
+			}
+			request.Header.Add("user", sg.user)
+			request.Header.Add("password", sg.password)
+			request.Header.Add("orgId", sg.orgId)
+			return client.Do(request)
+		})
+
 		if err != nil {
+			logger.Errorf("sugon---error=%s", err.Error())
 			return nil, false, err
 		}
-		request.Header.Add("user", sg.user)
-		request.Header.Add("password", sg.password)
-		request.Header.Add("orgId", sg.orgId)
-
-		//处理返回结果
-		response, err := client.Do(request)
-		defer client.CloseIdleConnections()
-		if err == nil && response.StatusCode/100 != 2 {
+		if response == nil {
+			return nil, false, fmt.Errorf("sugon---response nil")
+		}
+		if response.StatusCode/100 != 2 {
 			err = fmt.Errorf("sugon---SetToken bad resp status %s", response.StatusCode)
 		}
 		return response, false, err
 	})
-	if anyResponse == nil {
-		return fmt.Errorf("sugon---response nil")
-	}
 	if err != nil {
 		return err
 	}
@@ -289,46 +301,50 @@ func (sg *sgclient) SetToken() error {
 func (sg *sgclient) GetFileList(path, keyWord string, start, limit int64) (*FileList, error) {
 	err := sg.SetToken()
 	if err != nil {
-		time.Sleep(time.Duration(15) * time.Second)
-		err = sg.SetToken()
-		if err != nil {
-			return nil, err
-		}
+		return nil, err
 	}
-
-	//生成要访问的url
-	requestUrl := sg.apiEnv + "/efile/openapi/v2/file/list"
-
-	data := make(url.Values)
-	data["start"] = []string{strconv.FormatInt(start, 10)}
-	data["limit"] = []string{strconv.FormatInt(limit, 10)}
-	if path != "" {
-		data["path"] = []string{path}
-	}
-	if keyWord != "" {
-		data["keyWord"] = []string{keyWord}
-	}
-	uri, _ := url.Parse(requestUrl)
-	values := uri.Query()
-	if values != nil {
-		for k, v := range values {
-			data[k] = v
-		}
-	}
-	uri.RawQuery = data.Encode()
 
 	anyResponse, _, err := util.Run(15, 100, 4, "GetFileList", func() (any, bool, error) {
-		//提交请求
-		request, err := http.NewRequest(http.MethodGet, uri.String(), nil)
+		response, err := util.LoopDoRequest(func() (*http.Response, error) {
+			//生成要访问的url
+			requestUrl := sg.apiEnv + "/efile/openapi/v2/file/list"
+
+			data := make(url.Values)
+			data["start"] = []string{strconv.FormatInt(start, 10)}
+			data["limit"] = []string{strconv.FormatInt(limit, 10)}
+			if path != "" {
+				data["path"] = []string{path}
+			}
+			if keyWord != "" {
+				data["keyWord"] = []string{keyWord}
+			}
+			uri, _ := url.Parse(requestUrl)
+			values := uri.Query()
+			if values != nil {
+				for k, v := range values {
+					data[k] = v
+				}
+			}
+			uri.RawQuery = data.Encode()
+			//提交请求
+			request, err := http.NewRequest(http.MethodGet, uri.String(), nil)
+			if err != nil {
+				return nil, err
+			}
+			request.Header.Add("token", sg.token)
+			client := &http.Client{}
+			defer client.CloseIdleConnections()
+			//处理返回结果
+			return client.Do(request)
+		})
 		if err != nil {
+			logger.Errorf("sugon---error=%s", err.Error())
 			return nil, false, err
 		}
-		request.Header.Add("token", sg.token)
-		client := &http.Client{}
-		//处理返回结果
-		response, err := client.Do(request)
-		defer client.CloseIdleConnections()
-		if err == nil && response.StatusCode/100 != 2 {
+		if response == nil {
+			return nil, false, fmt.Errorf("sugon---response nil")
+		}
+		if response.StatusCode/100 != 2 {
 			err = fmt.Errorf("sugon---GetFileList bad resp status %s", response.StatusCode)
 		}
 		return response, false, err
@@ -340,11 +356,6 @@ func (sg *sgclient) GetFileList(path, keyWord string, start, limit int64) (*File
 		return nil, err
 	}
 	response := anyResponse.(*http.Response)
-	//返回的状态码
-	if response.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("sugon---GetFileList bad resp status %s", response.StatusCode)
-	}
-
 	defer response.Body.Close()
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
@@ -422,55 +433,56 @@ func (sg *sgclient) GetFileMeta(path string) (*FileMeta, error) {
 func (sg *sgclient) FileExist(path string) (bool, error) {
 	err := sg.SetToken()
 	if err != nil {
-		logger.Errorf("sugon---SetTokenError %s", err.Error())
-		time.Sleep(time.Duration(15) * time.Second)
-		err = sg.SetToken()
-		if err != nil {
-			return false, err
-		}
+		return false, err
 	}
 
-	//生成要访问的url
-	requestUrl := sg.apiEnv + "/efile/openapi/v2/file/exist"
-
-	data := make(url.Values)
-	data["path"] = []string{path}
-	uri, _ := url.Parse(requestUrl)
-	values := uri.Query()
-	if values != nil {
-		for k, v := range values {
-			data[k] = v
-		}
-	}
-	uri.RawQuery = data.Encode()
 	anyResponse, _, err := util.Run(15, 100, 4, "FileExist", func() (any, bool, error) {
-		//提交请求
-		request, err := http.NewRequest(http.MethodPost, uri.String(), nil)
+		response, err := util.LoopDoRequest(func() (*http.Response, error) {
+			//生成要访问的url
+			requestUrl := sg.apiEnv + "/efile/openapi/v2/file/exist"
+
+			data := make(url.Values)
+			data["path"] = []string{path}
+			uri, _ := url.Parse(requestUrl)
+			values := uri.Query()
+			if values != nil {
+				for k, v := range values {
+					data[k] = v
+				}
+			}
+			uri.RawQuery = data.Encode()
+			//提交请求
+			request, err := http.NewRequest(http.MethodPost, uri.String(), nil)
+			if err != nil {
+				return nil, err
+			}
+			request.Header.Add("token", sg.token)
+			client := &http.Client{}
+			defer client.CloseIdleConnections()
+			//处理返回结果
+			return client.Do(request)
+
+		})
+
 		if err != nil {
+			logger.Errorf("sugon---error=%s", err.Error())
 			return nil, false, err
 		}
-		request.Header.Add("token", sg.token)
-		client := &http.Client{}
-		//处理返回结果
-		response, err := client.Do(request)
-		defer client.CloseIdleConnections()
-		if err == nil && response.StatusCode/100 != 2 {
+
+		if response == nil {
+			return nil, false, fmt.Errorf("sugon---response nil")
+		}
+
+		if response.StatusCode/100 != 2 {
 			err = fmt.Errorf("sugon---FileExist bad resp status %s", response.StatusCode)
 		}
 		return response, false, err
 	})
-	if anyResponse == nil {
-		return false, fmt.Errorf("sugon---response nil")
-	}
+
 	if err != nil {
 		return false, err
 	}
 	response := anyResponse.(*http.Response)
-	//返回的状态码
-	if response.StatusCode/100 != 2 {
-		return false, fmt.Errorf("sugon---FileExist bad resp status %s", response.StatusCode)
-	}
-
 	defer response.Body.Close()
 	body, err := io.ReadAll(response.Body)
 	var fileExistResp FileExistResp
@@ -493,55 +505,58 @@ func (sg *sgclient) FileExist(path string) (bool, error) {
 func (sg *sgclient) CreateDir(path string) (bool, error) {
 	err := sg.SetToken()
 	if err != nil {
-		time.Sleep(time.Duration(15) * time.Second)
-		err = sg.SetToken()
-		if err != nil {
-			return false, err
-		}
+		return false, err
 	}
-
-	//生成要访问的url
-	requestUrl := sg.apiEnv + "/efile/openapi/v2/file/mkdir"
-
-	data := make(url.Values)
-	data["path"] = []string{path}
-	data["createParents"] = []string{"true"}
-	uri, _ := url.Parse(requestUrl)
-	values := uri.Query()
-	if values != nil {
-		for k, v := range values {
-			data[k] = v
-		}
-	}
-	uri.RawQuery = data.Encode()
 
 	anyResponse, _, err := util.Run(15, 100, 4, "CreateDir", func() (any, bool, error) {
-		//提交请求
-		request, err := http.NewRequest(http.MethodPost, uri.String(), nil)
+		response, err := util.LoopDoRequest(func() (*http.Response, error) {
+
+			//生成要访问的url
+			requestUrl := sg.apiEnv + "/efile/openapi/v2/file/mkdir"
+
+			data := make(url.Values)
+			data["path"] = []string{path}
+			data["createParents"] = []string{"true"}
+			uri, _ := url.Parse(requestUrl)
+			values := uri.Query()
+			if values != nil {
+				for k, v := range values {
+					data[k] = v
+				}
+			}
+			uri.RawQuery = data.Encode()
+			//提交请求
+			request, err := http.NewRequest(http.MethodPost, uri.String(), nil)
+			if err != nil {
+				return nil, err
+			}
+
+			request.Header.Add("token", sg.token)
+			client := &http.Client{}
+			defer client.CloseIdleConnections()
+			//处理返回结果
+			return client.Do(request)
+
+		})
+
 		if err != nil {
+			logger.Errorf("sugon---error=%s", err.Error())
 			return nil, false, err
 		}
-		request.Header.Add("token", sg.token)
-		client := &http.Client{}
-		//处理返回结果
-		response, err := client.Do(request)
-		defer client.CloseIdleConnections()
-		if err == nil && response.StatusCode/100 != 2 {
+
+		if response == nil {
+			return nil, false, fmt.Errorf("sugon---response nil")
+		}
+		if response.StatusCode/100 != 2 {
 			err = fmt.Errorf("sugon---CreateDir bad resp status %s", response.StatusCode)
 		}
 		return response, false, err
 	})
-	if anyResponse == nil {
-		return false, fmt.Errorf("sugon---response nil")
-	}
+
 	if err != nil {
 		return false, err
 	}
 	response := anyResponse.(*http.Response)
-	if response.StatusCode/100 != 2 {
-		return false, fmt.Errorf("sugon---CreateDir bad resp status %s", response.StatusCode)
-	}
-
 	defer response.Body.Close()
 	body, err := io.ReadAll(response.Body)
 	var makeDirResp MakeDirResp
@@ -563,54 +578,54 @@ func (sg *sgclient) CreateDir(path string) (bool, error) {
 func (sg *sgclient) DeleteFile(path string) (bool, error) {
 	err := sg.SetToken()
 	if err != nil {
-		time.Sleep(time.Duration(15) * time.Second)
-		err = sg.SetToken()
-		if err != nil {
-			return false, err
-		}
+		return false, err
 	}
-
-	//生成要访问的url
-	requestUrl := sg.apiEnv + "/efile/openapi/v2/file/remove"
-
-	data := make(url.Values)
-	data["paths"] = []string{path}
-	data["recursive"] = []string{"true"}
-	uri, _ := url.Parse(requestUrl)
-	values := uri.Query()
-	if values != nil {
-		for k, v := range values {
-			data[k] = v
-		}
-	}
-	uri.RawQuery = data.Encode()
 
 	anyResponse, _, err := util.Run(15, 100, 4, "DeleteFile", func() (any, bool, error) {
-		//提交请求
-		request, err := http.NewRequest(http.MethodPost, uri.String(), nil)
+		response, err := util.LoopDoRequest(func() (*http.Response, error) {
+
+			//生成要访问的url
+			requestUrl := sg.apiEnv + "/efile/openapi/v2/file/remove"
+
+			data := make(url.Values)
+			data["paths"] = []string{path}
+			data["recursive"] = []string{"true"}
+			uri, _ := url.Parse(requestUrl)
+			values := uri.Query()
+			if values != nil {
+				for k, v := range values {
+					data[k] = v
+				}
+			}
+			uri.RawQuery = data.Encode()
+			//提交请求
+			request, err := http.NewRequest(http.MethodPost, uri.String(), nil)
+			if err != nil {
+				return nil, err
+			}
+			request.Header.Add("token", sg.token)
+			client := &http.Client{}
+			defer client.CloseIdleConnections()
+			//处理返回结果
+			return client.Do(request)
+
+		})
 		if err != nil {
+			logger.Errorf("sugon---error=%s", err.Error())
 			return nil, false, err
 		}
-		request.Header.Add("token", sg.token)
-		client := &http.Client{}
-		//处理返回结果
-		response, err := client.Do(request)
-		defer client.CloseIdleConnections()
-		if err == nil && response.StatusCode/100 != 2 {
+		if response == nil {
+			return nil, false, fmt.Errorf("sugon---response nil")
+		}
+		if response.StatusCode/100 != 2 {
 			err = fmt.Errorf("sugon---DeleteFile bad resp status %s", response.StatusCode)
 		}
 		return response, false, err
 	})
-	if anyResponse == nil {
-		return false, fmt.Errorf("sugon---response nil")
-	}
 	if err != nil {
 		return false, err
 	}
 	response := anyResponse.(*http.Response)
-	if response.StatusCode/100 != 2 {
-		return false, fmt.Errorf("sugon---DeleteFile bad resp status %s", response.StatusCode)
-	}
 
 	defer response.Body.Close()
 	body, err := io.ReadAll(response.Body)
@@ -633,43 +648,42 @@ func (sg *sgclient) DeleteFile(path string) (bool, error) {
 func (sg *sgclient) Download(path string) (io.ReadCloser, error) {
 	err := sg.SetToken()
 	if err != nil {
-		time.Sleep(time.Duration(15) * time.Second)
-		err = sg.SetToken()
-		if err != nil {
-			return nil, err
-		}
+		return nil, err
 	}
-
-	//生成要访问的url
-	requestUrl := sg.apiEnv + "/efile/openapi/v2/file/download"
-	data := make(url.Values)
-	data["path"] = []string{path}
-	uri, _ := url.Parse(requestUrl)
-	values := uri.Query()
-	if values != nil {
-		for k, v := range values {
-			data[k] = v
-		}
-	}
-	uri.RawQuery = data.Encode()
 
 	anyResponse, _, err := util.Run(15, 100, 4, "Download", func() (any, bool, error) {
-		//提交请求
-		request, err := http.NewRequest(http.MethodGet, uri.String(), nil)
-		if err != nil {
-			return nil, false, err
-		}
-		request.Header.Add("token", sg.token)
-		client := &http.Client{}
-		//处理返回结果
-		response, err := client.Do(request)
+		response, err := util.LoopDoRequest(func() (*http.Response, error) {
+			//生成要访问的url
+			requestUrl := sg.apiEnv + "/efile/openapi/v2/file/download"
+			data := make(url.Values)
+			data["path"] = []string{path}
+			uri, _ := url.Parse(requestUrl)
+			values := uri.Query()
+			if values != nil {
+				for k, v := range values {
+					data[k] = v
+				}
+			}
+			uri.RawQuery = data.Encode()
+			//提交请求
+			request, err := http.NewRequest(http.MethodGet, uri.String(), nil)
+			if err != nil {
+				return nil, err
+			}
+			request.Header.Add("token", sg.token)
+			client := &http.Client{}
+			defer client.CloseIdleConnections()
+			//处理返回结果
+			return client.Do(request)
+		})
+
 		if err != nil {
 			return nil, false, err
 		}
 		if response == nil {
 			return nil, false, fmt.Errorf("sugon nil response err")
 		}
-		defer client.CloseIdleConnections()
+
 		if response.StatusCode/100 != 2 {
 			err = fmt.Errorf("sugon---Download bad resp status %s", response.StatusCode)
 		}
@@ -700,51 +714,48 @@ func (sg *sgclient) Upload(filePath string, reader io.Reader, totalLength int64)
 func (sg *sgclient) UploadTinyFile(filePath string, reader io.Reader) error {
 	err := sg.SetToken()
 	if err != nil {
-		time.Sleep(time.Duration(15) * time.Second)
-		err = sg.SetToken()
-		if err != nil {
-			return err
-		}
-	}
-
-	bodyBuf := &bytes.Buffer{}
-	bodyWriter := multipart.NewWriter(bodyBuf)
-	fileName := filepath.Base(filePath)
-	fileDir := filepath.Dir(filePath)
-	fileWriter, err := bodyWriter.CreateFormFile("file", fileName)
-	_, err = io.Copy(fileWriter, reader)
-	if err != nil {
 		return err
 	}
-	contentType := bodyWriter.FormDataContentType()
-	bodyWriter.Close()
-	//生成要访问的url
-	requestUrl := sg.apiEnv + "/efile/openapi/v2/file/upload"
-	data := make(url.Values)
-	data["path"] = []string{fileDir}
-	data["cover"] = []string{"cover"}
-	uri, _ := url.Parse(requestUrl)
-	values := uri.Query()
-	if values != nil {
-		for k, v := range values {
-			data[k] = v
-		}
-	}
-	uri.RawQuery = data.Encode()
-
 	_, _, err = util.Run(15, 100, 4, "UploadTinyFile", func() (any, bool, error) {
-		//提交请求
-		request, err := http.NewRequest(http.MethodPost, uri.String(), bodyBuf)
-		if err != nil {
-			return nil, false, err
-		}
-		request.Header.Add("token", sg.token)
-		request.Header.Add("Content-Type", contentType)
-		request.Header.Add("Content-Type", "multipart/form-data")
-		client := &http.Client{}
-		//处理返回结果
-		response, err := client.Do(request)
-		defer client.CloseIdleConnections()
+		response, err := util.LoopDoRequest(func() (*http.Response, error) {
+			bodyBuf := &bytes.Buffer{}
+			bodyWriter := multipart.NewWriter(bodyBuf)
+			fileName := filepath.Base(filePath)
+			fileDir := filepath.Dir(filePath)
+			fileWriter, err := bodyWriter.CreateFormFile("file", fileName)
+			_, err = io.Copy(fileWriter, reader)
+			if err != nil {
+				return nil, err
+			}
+			contentType := bodyWriter.FormDataContentType()
+			bodyWriter.Close()
+			//生成要访问的url
+			requestUrl := sg.apiEnv + "/efile/openapi/v2/file/upload"
+			data := make(url.Values)
+			data["path"] = []string{fileDir}
+			data["cover"] = []string{"cover"}
+			uri, _ := url.Parse(requestUrl)
+			values := uri.Query()
+			if values != nil {
+				for k, v := range values {
+					data[k] = v
+				}
+			}
+			uri.RawQuery = data.Encode()
+			//提交请求
+			request, err := http.NewRequest(http.MethodPost, uri.String(), bodyBuf)
+			if err != nil {
+				return nil, err
+			}
+			request.Header.Add("token", sg.token)
+			request.Header.Add("Content-Type", contentType)
+			request.Header.Add("Content-Type", "multipart/form-data")
+			client := &http.Client{}
+			defer client.CloseIdleConnections()
+			//处理返回结果
+			return client.Do(request)
+		})
+
 		if err != nil {
 			return nil, false, err
 		}
@@ -777,11 +788,7 @@ func (sg *sgclient) UploadTinyFile(filePath string, reader io.Reader) error {
 func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength int64) error {
 	err := sg.SetToken()
 	if err != nil {
-		time.Sleep(time.Duration(15) * time.Second)
-		err = sg.SetToken()
-		if err != nil {
-			return err
-		}
+		return err
 	}
 
 	fileName := filepath.Base(filePath)
@@ -811,53 +818,60 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 		if n == 0 {
 			break
 		}
-		bodyBuf := &bytes.Buffer{}
-		bodyWriter := multipart.NewWriter(bodyBuf)
-		fileWriter, err := bodyWriter.CreateFormFile("file", fileName)
-		length, err := fileWriter.Write(dataBuffer[:n])
-		if err != nil {
-			return err
-		}
-		contentType := bodyWriter.FormDataContentType()
-		bodyWriter.Close()
-		//生成要访问的url
-		requestUrl := sg.apiEnv + "/efile/openapi/v2/file/burst"
-
-		data := make(url.Values)
-		data["path"] = []string{fileDir}
-		data["filename"] = []string{fileName}
-		data["relativePath"] = []string{fileName}
-		data["cover"] = []string{"cover"}
-		data["totalSize"] = []string{strconv.FormatInt(totalLength, 10)}
-		data["chunkSize"] = []string{strconv.FormatInt(int64(CHUNK_SIZE), 10)}
-		data["totalChunks"] = []string{strconv.FormatInt(int64(chunkCount), 10)}
-		data["currentChunkSize"] = []string{strconv.FormatInt(int64(length), 10)}
-		data["chunkNumber"] = []string{strconv.FormatInt(int64(chunkNumber), 10)}
-
-		uri, _ := url.Parse(requestUrl)
-		values := uri.Query()
-		if values != nil {
-			for k, v := range values {
-				data[k] = v
-			}
-		}
-		uri.RawQuery = data.Encode()
 
 		_, _, err = util.Run(15, 100, 4, "UploadBigFile", func() (any, bool, error) {
-			//提交请求
-			request, err := http.NewRequest(http.MethodPost, uri.String(), bodyBuf)
-			if err != nil {
-				return nil, false, err
-			}
-			request.Header.Add("token", sg.token)
-			request.Header.Add("Content-Type", contentType)
-			request.Header.Add("Content-Type", "multipart/form-data")
-			client := &http.Client{}
+
+			response, err := util.LoopDoRequest(func() (*http.Response, error) {
+				bodyBuf := &bytes.Buffer{}
+				bodyWriter := multipart.NewWriter(bodyBuf)
+				fileWriter, err := bodyWriter.CreateFormFile("file", fileName)
+				length, err := fileWriter.Write(dataBuffer[:n])
+				if err != nil {
+					return nil, err
+				}
+				contentType := bodyWriter.FormDataContentType()
+				bodyWriter.Close()
+				//生成要访问的url
+				requestUrl := sg.apiEnv + "/efile/openapi/v2/file/burst"
+
+				data := make(url.Values)
+				data["path"] = []string{fileDir}
+				data["filename"] = []string{fileName}
+				data["relativePath"] = []string{fileName}
+				data["cover"] = []string{"cover"}
+				data["totalSize"] = []string{strconv.FormatInt(totalLength, 10)}
+				data["chunkSize"] = []string{strconv.FormatInt(int64(CHUNK_SIZE), 10)}
+				data["totalChunks"] = []string{strconv.FormatInt(int64(chunkCount), 10)}
+				data["currentChunkSize"] = []string{strconv.FormatInt(int64(length), 10)}
+				data["chunkNumber"] = []string{strconv.FormatInt(int64(chunkNumber), 10)}
+
+				uri, _ := url.Parse(requestUrl)
+				values := uri.Query()
+				if values != nil {
+					for k, v := range values {
+						data[k] = v
+					}
+				}
+				uri.RawQuery = data.Encode()
+				//提交请求
+				request, err := http.NewRequest(http.MethodPost, uri.String(), bodyBuf)
+				if err != nil {
+					return nil, err
+				}
+				request.Header.Add("token", sg.token)
+				request.Header.Add("Content-Type", contentType)
+				request.Header.Add("Content-Type", "multipart/form-data")
+				client := &http.Client{}
+				defer client.CloseIdleConnections()
+
+				return client.Do(request)
+			})
+
 			//处理返回结果
-			response, err := client.Do(request)
-			defer client.CloseIdleConnections()
+
 			if err != nil {
 				logger.Errorf("sugon---UploadBigFile error=%s", err.Error())
+				logger.Errorf("response", response.StatusCode)
 				return nil, false, err
 			}
 			if response == nil {
@@ -881,8 +895,8 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 			}
 			if uploadResp.Code != "0" {
 				return nil, false, fmt.Errorf("sugon---Upload failed, path=%s, totalLength=%d, currentChunkSize=%d"+
-					", chunkSize=%d, Code=%s, Message=%s, chunkNumber=%d, dataBuffer=%d, pipeBuffer=%d n=%d",
-					filePath, totalLength, length, CHUNK_SIZE, uploadResp.Code, uploadResp.Msg, chunkNumber, len(dataBuffer), len(pipeBuffer), n)
+					", chunkSize=%d, Code=%s, Message=%s, chunkNumber=%d, dataBuffer=%d, pipeBuffer=%d",
+					filePath, totalLength, n, CHUNK_SIZE, uploadResp.Code, uploadResp.Msg, chunkNumber, len(dataBuffer), len(pipeBuffer))
 			}
 			return response, false, err
 		})
@@ -897,42 +911,42 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 func (sg *sgclient) MergeBigFile(filePath string) error {
 	err := sg.SetToken()
 	if err != nil {
-		time.Sleep(time.Duration(15) * time.Second)
-		err = sg.SetToken()
-		if err != nil {
-			return err
-		}
+		return err
 	}
 
 	fileName := filepath.Base(filePath)
 	fileDir := filepath.Dir(filePath)
-	//生成要访问的url
-	requestUrl := sg.apiEnv + "/efile/openapi/v2/file/merge"
-	data := make(url.Values)
-	data["path"] = []string{fileDir}
-	data["filename"] = []string{fileName}
-	data["relativePath"] = []string{fileName}
-	data["cover"] = []string{"cover"}
-	uri, _ := url.Parse(requestUrl)
-	values := uri.Query()
-	if values != nil {
-		for k, v := range values {
-			data[k] = v
-		}
-	}
-	uri.RawQuery = data.Encode()
 
 	_, _, err = util.Run(15, 100, 4, "MergeBigFile", func() (any, bool, error) {
-		//提交请求
-		request, err := http.NewRequest(http.MethodPost, uri.String(), nil)
-		if err != nil {
-			return nil, false, err
-		}
-		request.Header.Add("token", sg.token)
-		client := &http.Client{}
-		defer client.CloseIdleConnections()
-		//处理返回结果
-		response, err := client.Do(request)
+
+		response, err := util.LoopDoRequest(func() (*http.Response, error) {
+			//生成要访问的url
+			requestUrl := sg.apiEnv + "/efile/openapi/v2/file/merge"
+			data := make(url.Values)
+			data["path"] = []string{fileDir}
+			data["filename"] = []string{fileName}
+			data["relativePath"] = []string{fileName}
+			data["cover"] = []string{"cover"}
+			uri, _ := url.Parse(requestUrl)
+			values := uri.Query()
+			if values != nil {
+				for k, v := range values {
+					data[k] = v
+				}
+			}
+			uri.RawQuery = data.Encode()
+			//提交请求
+			request, err := http.NewRequest(http.MethodPost, uri.String(), nil)
+			if err != nil {
+				return nil, err
+			}
+			request.Header.Add("token", sg.token)
+			client := &http.Client{}
+			defer client.CloseIdleConnections()
+			//处理返回结果
+			return client.Do(request)
+		})
+
 		if err != nil {
 			return nil, false, err
 		}
