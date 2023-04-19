@@ -948,6 +948,7 @@ func (sg *sgclient) MergeBigFile(filePath string) error {
 		})
 
 		if err != nil {
+			logger.Errorf("sugon-error=%s", err.Error())
 			return nil, false, err
 		}
 		if response == nil {

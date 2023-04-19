@@ -40,7 +40,7 @@ func LoopDoRequest(f func() (response *http.Response, err error)) (*http.Respons
 			break
 		}
 		retryCount += 1
-		logger.Errorf("starlight---client do request error=%s retryCount=%d", err.Error(), retryCount)
+		logger.Errorf("sugon---client do request error=%s retryCount=%d", err.Error(), retryCount)
 		if retryCount <= 20 {
 			time.Sleep(time.Duration(3) * time.Second)
 		} else if retryCount <= 360+20 {
