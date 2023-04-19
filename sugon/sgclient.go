@@ -796,6 +796,7 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 
 	chunkCount := int(math.Ceil(float64(totalLength) / float64(CHUNK_SIZE)))
 	chunkNumber := 1
+	var readLength int64 = 0
 	for {
 		n := 0
 		dataBuffer := make([]byte, 0)
@@ -811,7 +812,9 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 			}
 			dataBuffer = append(dataBuffer, pipeBuffer...)
 			n += nn
-			if nn < READ_BUFFER_SIZE || n >= CHUNK_SIZE {
+			readLength += int64(nn)
+			logger.Infof("n=%d nn=%d dataBuffer=%d pipeBuffer=%d readLength=%d", n, nn, len(dataBuffer), len(pipeBuffer), readLength)
+			if readLength >= totalLength || n >= CHUNK_SIZE {
 				break
 			}
 		}
@@ -829,6 +832,9 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 				if err != nil {
 					return nil, err
 				}
+				logger.Infof("sugon&&&Upload shard, path=%s, totalLength=%d, currentChunkSize=%d"+
+					", chunkSize=%d,chunkNumber=%d, dataBuffer=%d, pipeBuffer=%d n=%d, length=%d",
+					filePath, totalLength, n, CHUNK_SIZE, chunkNumber, len(dataBuffer), len(pipeBuffer), n, length)
 				contentType := bodyWriter.FormDataContentType()
 				bodyWriter.Close()
 				//生成要访问的url
@@ -895,8 +901,8 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 			}
 			if uploadResp.Code != "0" {
 				return nil, false, fmt.Errorf("sugon---Upload failed, path=%s, totalLength=%d, currentChunkSize=%d"+
-					", chunkSize=%d, Code=%s, Message=%s, chunkNumber=%d, dataBuffer=%d, pipeBuffer=%d",
-					filePath, totalLength, n, CHUNK_SIZE, uploadResp.Code, uploadResp.Msg, chunkNumber, len(dataBuffer), len(pipeBuffer))
+					", chunkSize=%d, Code=%s, Message=%s, chunkNumber=%d, dataBuffer=%d, pipeBuffer=%d n=%d readlength=%d",
+					filePath, totalLength, n, CHUNK_SIZE, uploadResp.Code, uploadResp.Msg, chunkNumber, len(dataBuffer), len(pipeBuffer), n, readLength)
 			}
 			return response, false, err
 		})
