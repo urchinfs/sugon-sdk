@@ -810,7 +810,7 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 			if nn == 0 {
 				break
 			}
-			dataBuffer = append(dataBuffer, pipeBuffer...)
+			dataBuffer = append(dataBuffer, pipeBuffer[:nn]...)
 			n += nn
 			readLength += int64(nn)
 			logger.Infof("n=%d nn=%d dataBuffer=%d pipeBuffer=%d readLength=%d", n, nn, len(dataBuffer), len(pipeBuffer), readLength)
