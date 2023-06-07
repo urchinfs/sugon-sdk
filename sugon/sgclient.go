@@ -744,12 +744,12 @@ func (sg *sgclient) UploadTinyFile(filePath string, reader io.Reader) error {
 			uri.RawQuery = data.Encode()
 			//提交请求
 			request, err := http.NewRequest(http.MethodPost, uri.String(), bodyBuf)
+			println(uri.String())
 			if err != nil {
 				return nil, err
 			}
 			request.Header.Add("token", sg.token)
 			request.Header.Add("Content-Type", contentType)
-			request.Header.Add("Content-Type", "multipart/form-data")
 			client := &http.Client{}
 			defer client.CloseIdleConnections()
 			//处理返回结果
@@ -764,6 +764,7 @@ func (sg *sgclient) UploadTinyFile(filePath string, reader io.Reader) error {
 		}
 		if response.StatusCode/100 != 2 {
 			err = fmt.Errorf("sugon---Upload TinyFile bad resp status %s", response.StatusCode)
+			return nil, false, err
 		}
 		defer response.Body.Close()
 
@@ -866,7 +867,6 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 				}
 				request.Header.Add("token", sg.token)
 				request.Header.Add("Content-Type", contentType)
-				request.Header.Add("Content-Type", "multipart/form-data")
 				client := &http.Client{}
 				defer client.CloseIdleConnections()
 
@@ -886,6 +886,7 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 			}
 			if response.StatusCode/100 != 2 {
 				err = fmt.Errorf("sugon---Upload bad resp status %s", response.StatusCode)
+				return nil, false, err
 			}
 			defer response.Body.Close()
 
