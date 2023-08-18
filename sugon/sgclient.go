@@ -7,6 +7,7 @@ import (
 	logger "github.com/urchinfs/sugon-sdk/dflog"
 	"github.com/urchinfs/sugon-sdk/util"
 	"io"
+	"log"
 	"math"
 	"mime/multipart"
 	"net/http"
@@ -92,6 +93,18 @@ type TokenValidResp struct {
 	Code string `json:"code"`
 	Msg  string `json:"msg"`
 	Data string `json:"data"`
+}
+
+type CenterApiResp struct {
+	Code string `json:"code"`
+	Msg  string `json:"msg"`
+	Data struct {
+		EFileUrls []struct {
+			Enable  string `json:"enable"`
+			Version string `json:"version"`
+			Url     string `json:"url"`
+		} `json:"efileUrls"`
+	} `json:"data"`
 }
 
 type FileMeta struct {
@@ -298,8 +311,81 @@ func (sg *sgclient) SetToken() error {
 
 }
 
+func (sg *sgclient) SetCenterApi() error {
+	anyResponse, _, err := util.Run(15, 100, 4, "SetCenterApi", func() (any, bool, error) {
+		response, err := util.LoopDoRequest(func() (*http.Response, error) {
+			client := &http.Client{}
+			defer client.CloseIdleConnections()
+			url := sg.secEnv + "/ac/openapi/v2/center"
+			request, err := http.NewRequest(http.MethodGet, url, nil)
+			if err != nil {
+				return nil, err
+			}
+
+			request.Header.Add("token", sg.token)
+			return client.Do(request)
+		})
+
+		if err != nil {
+			logger.Errorf("sugon---error=%s", err.Error())
+			return nil, false, err
+		}
+		if response == nil {
+			return nil, false, fmt.Errorf("sugon---response nil")
+		}
+		if response.StatusCode/100 != 2 {
+			err = fmt.Errorf("sugon---SetCenterApi bad resp status %s", response.StatusCode)
+		}
+		return response, false, err
+	})
+	if err != nil {
+		return err
+	}
+	response := anyResponse.(*http.Response)
+	if err != nil {
+		return err
+	}
+	//返回的状态码
+	if response.StatusCode/100 != 2 {
+		logger.Errorf("sugon---SetCenterApi status %s", response.Status)
+		return fmt.Errorf("SetCenterApi bad resp status %s", response.Status)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		return err
+	}
+
+	var centerResp CenterApiResp
+	err = json.Unmarshal(body, &centerResp)
+	if err != nil {
+		return err
+	}
+	if centerResp.Code != "0" {
+		return fmt.Errorf("SetCenterApi bad token return code %s %s", centerResp.Code, centerResp.Msg)
+	}
+	if len(centerResp.Data.EFileUrls) < 1 {
+		log.Printf("sugon---SetCenterApi empty eFileApi response list")
+		return fmt.Errorf("SetCenterApi empty eFileApi response list")
+	}
+	for _, eFile := range centerResp.Data.EFileUrls {
+		if "true" == eFile.Enable {
+			sg.apiEnv = eFile.Url
+			return nil
+		}
+	}
+	logger.Errorf("sugon---SetCenterApi get center for eFile urls=%s failed", sg.clusterId)
+	return fmt.Errorf("SetCenterApi get center for eFile urls=%s failed", sg.clusterId)
+
+}
+
 func (sg *sgclient) GetFileList(path, keyWord string, start, limit int64) (*FileList, error) {
 	err := sg.SetToken()
+	if err != nil {
+		return nil, err
+	}
+
+	err = sg.SetCenterApi()
 	if err != nil {
 		return nil, err
 	}
@@ -307,7 +393,7 @@ func (sg *sgclient) GetFileList(path, keyWord string, start, limit int64) (*File
 	anyResponse, _, err := util.Run(15, 100, 4, "GetFileList", func() (any, bool, error) {
 		response, err := util.LoopDoRequest(func() (*http.Response, error) {
 			//生成要访问的url
-			requestUrl := sg.apiEnv + "/efile/openapi/v2/file/list"
+			requestUrl := sg.apiEnv + "/openapi/v2/file/list"
 
 			data := make(url.Values)
 			data["start"] = []string{strconv.FormatInt(start, 10)}
@@ -436,10 +522,15 @@ func (sg *sgclient) FileExist(path string) (bool, error) {
 		return false, err
 	}
 
+	err = sg.SetCenterApi()
+	if err != nil {
+		return false, err
+	}
+
 	anyResponse, _, err := util.Run(15, 100, 4, "FileExist", func() (any, bool, error) {
 		response, err := util.LoopDoRequest(func() (*http.Response, error) {
 			//生成要访问的url
-			requestUrl := sg.apiEnv + "/efile/openapi/v2/file/exist"
+			requestUrl := sg.apiEnv + "/openapi/v2/file/exist"
 
 			data := make(url.Values)
 			data["path"] = []string{path}
@@ -508,11 +599,16 @@ func (sg *sgclient) CreateDir(path string) (bool, error) {
 		return false, err
 	}
 
+	err = sg.SetCenterApi()
+	if err != nil {
+		return false, err
+	}
+
 	anyResponse, _, err := util.Run(15, 100, 4, "CreateDir", func() (any, bool, error) {
 		response, err := util.LoopDoRequest(func() (*http.Response, error) {
 
 			//生成要访问的url
-			requestUrl := sg.apiEnv + "/efile/openapi/v2/file/mkdir"
+			requestUrl := sg.apiEnv + "/openapi/v2/file/mkdir"
 
 			data := make(url.Values)
 			data["path"] = []string{path}
@@ -581,11 +677,16 @@ func (sg *sgclient) DeleteFile(path string) (bool, error) {
 		return false, err
 	}
 
+	err = sg.SetCenterApi()
+	if err != nil {
+		return false, err
+	}
+
 	anyResponse, _, err := util.Run(15, 100, 4, "DeleteFile", func() (any, bool, error) {
 		response, err := util.LoopDoRequest(func() (*http.Response, error) {
 
 			//生成要访问的url
-			requestUrl := sg.apiEnv + "/efile/openapi/v2/file/remove"
+			requestUrl := sg.apiEnv + "/openapi/v2/file/remove"
 
 			data := make(url.Values)
 			data["paths"] = []string{path}
@@ -651,10 +752,15 @@ func (sg *sgclient) Download(path string) (io.ReadCloser, error) {
 		return nil, err
 	}
 
+	err = sg.SetCenterApi()
+	if err != nil {
+		return nil, err
+	}
+
 	anyResponse, _, err := util.Run(15, 100, 4, "Download", func() (any, bool, error) {
 		response, err := util.LoopDoRequest(func() (*http.Response, error) {
 			//生成要访问的url
-			requestUrl := sg.apiEnv + "/efile/openapi/v2/file/download"
+			requestUrl := sg.apiEnv + "/openapi/v2/file/download"
 			data := make(url.Values)
 			data["path"] = []string{path}
 			uri, _ := url.Parse(requestUrl)
@@ -716,6 +822,12 @@ func (sg *sgclient) UploadTinyFile(filePath string, reader io.Reader) error {
 	if err != nil {
 		return err
 	}
+
+	err = sg.SetCenterApi()
+	if err != nil {
+		return err
+	}
+
 	_, _, err = util.Run(15, 100, 4, "UploadTinyFile", func() (any, bool, error) {
 		response, err := util.LoopDoRequest(func() (*http.Response, error) {
 			bodyBuf := &bytes.Buffer{}
@@ -730,7 +842,7 @@ func (sg *sgclient) UploadTinyFile(filePath string, reader io.Reader) error {
 			contentType := bodyWriter.FormDataContentType()
 			bodyWriter.Close()
 			//生成要访问的url
-			requestUrl := sg.apiEnv + "/efile/openapi/v2/file/upload"
+			requestUrl := sg.apiEnv + "/openapi/v2/file/upload"
 			data := make(url.Values)
 			data["path"] = []string{fileDir}
 			data["cover"] = []string{"cover"}
@@ -792,6 +904,11 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 		return err
 	}
 
+	err = sg.SetCenterApi()
+	if err != nil {
+		return err
+	}
+
 	fileName := filepath.Base(filePath)
 	fileDir := filepath.Dir(filePath)
 
@@ -839,7 +956,7 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 				contentType := bodyWriter.FormDataContentType()
 				bodyWriter.Close()
 				//生成要访问的url
-				requestUrl := sg.apiEnv + "/efile/openapi/v2/file/burst"
+				requestUrl := sg.apiEnv + "/openapi/v2/file/burst"
 
 				data := make(url.Values)
 				data["path"] = []string{fileDir}
@@ -921,6 +1038,11 @@ func (sg *sgclient) MergeBigFile(filePath string) error {
 		return err
 	}
 
+	err = sg.SetCenterApi()
+	if err != nil {
+		return err
+	}
+
 	fileName := filepath.Base(filePath)
 	fileDir := filepath.Dir(filePath)
 
@@ -928,7 +1050,7 @@ func (sg *sgclient) MergeBigFile(filePath string) error {
 
 		response, err := util.LoopDoRequest(func() (*http.Response, error) {
 			//生成要访问的url
-			requestUrl := sg.apiEnv + "/efile/openapi/v2/file/merge"
+			requestUrl := sg.apiEnv + "/openapi/v2/file/merge"
 			data := make(url.Values)
 			data["path"] = []string{fileDir}
 			data["filename"] = []string{fileName}
@@ -984,7 +1106,7 @@ func (sg *sgclient) MergeBigFile(filePath string) error {
 }
 
 func (sg *sgclient) GetSignURL(path string) string {
-	requestUrl := sg.apiEnv + "/efile/openapi/v2/file/download"
+	requestUrl := sg.apiEnv + "/openapi/v2/file/download"
 	data := make(url.Values)
 	data["path"] = []string{path}
 	data["token"] = []string{sg.token}
