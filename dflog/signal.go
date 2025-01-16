@@ -33,7 +33,7 @@ var (
 
 func startLoggerSignalHandler() {
 	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGUSR1)
+	signal.Notify(signals, syscall.SIGINT)
 
 	go func() {
 		for {
