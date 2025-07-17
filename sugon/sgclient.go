@@ -288,7 +288,7 @@ func (sg *sgclient) SetToken() error {
 	}
 	for _, cluster := range tokenResp.Data {
 		if sg.clusterId == cluster.ClusterID {
-			sg.token = tokenResp.Data[0].Token
+			sg.token = cluster.Token
 			//logger.Errorf("sugon---SetToken get token %s", tokenResp.Data[0].Token)
 			return nil
 		}
