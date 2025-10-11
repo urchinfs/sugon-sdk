@@ -19,7 +19,7 @@ func Run(initBackoff float64,
 	for i := 0; i < maxAttempts; i++ {
 		if i > 0 {
 			time.Sleep(RandBackoffSeconds(initBackoff, maxBackoff, 2.0, i))
-			logger.Infof("sugon&&&retry method=%s %s", flag, i)
+			logger.Infof("sugon&&&retry method=%s %v", flag, i)
 		}
 
 		res, cancel, cause = f()

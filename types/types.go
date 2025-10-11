@@ -21,12 +21,19 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 // PEMContent supports load PEM format from file or just inline PEM format content
 type PEMContent string
+
+const (
+	StoragePrefixSugonToken = "urchin:storage:sugon:token"
+
+	DefaultTokenExpireTime = time.Hour * 20
+)
 
 func (p *PEMContent) UnmarshalJSON(b []byte) error {
 	var s string
