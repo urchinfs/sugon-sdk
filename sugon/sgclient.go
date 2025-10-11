@@ -3,16 +3,23 @@ package sugon
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	logger "github.com/urchinfs/sugon-sdk/dflog"
+	"github.com/urchinfs/sugon-sdk/types"
 	"github.com/urchinfs/sugon-sdk/util"
+	urchinutil "github.com/urchinfs/urchin_util/redis"
 	"io"
 	"math"
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
+	"path"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"time"
 )
 
 type Sgclient interface {
@@ -55,6 +62,10 @@ type Sgclient interface {
 
 	// get sign url
 	GetSignURL(path string) string
+
+	DeleteDir(path string) (bool, error)
+
+	MultiUploadObject(sourceFile string, offset int64, partSize int32, filePath string, chunkNumber, totalChunks int32, totalLength int64) error
 }
 
 type sgclient struct {
@@ -65,16 +76,24 @@ type sgclient struct {
 	orgId     string
 	secEnv    string
 	apiEnv    string
+
+	redisStorage *urchinutil.RedisStorage
 }
 
-func New(clusterId, user, password, orgId, secEnv, apiEnv string) (Sgclient, error) {
+func New(clusterId, user, password, orgId, secEnv, apiEnv string, redisEndpoints []string, redisPassword string, enableCluster bool) (Sgclient, error) {
+	redisStorage := urchinutil.NewRedisStorage(redisEndpoints, redisPassword, enableCluster)
+	if redisStorage == nil {
+		return nil, errors.New("init redis error")
+	}
+
 	return &sgclient{
-		clusterId: clusterId,
-		user:      user,
-		password:  password,
-		orgId:     orgId,
-		secEnv:    secEnv,
-		apiEnv:    apiEnv,
+		clusterId:    clusterId,
+		user:         user,
+		password:     password,
+		orgId:        orgId,
+		secEnv:       secEnv,
+		apiEnv:       apiEnv,
+		redisStorage: redisStorage,
 	}, nil
 }
 
@@ -159,12 +178,24 @@ type UploadResp struct {
 }
 
 const (
-	CHUNK_SIZE       = 16 * 1024 * 1024
-	READ_BUFFER_SIZE = 32 * 1024
-	FILE_SHARD_LIMIT = 128 * 1024 * 1024
+	ChunkSize      = 16 * 1024 * 1024
+	ReadBufferSize = 32 * 1024
+	FileShardLimit = 128 * 1024 * 1024
 )
 
 func (sg *sgclient) isTokenValid() (bool, error) {
+	var err error
+	tokenKey := sg.redisStorage.MakeStorageKey([]string{sg.clusterId}, types.StoragePrefixSugonToken)
+	value, err := sg.redisStorage.Get(tokenKey)
+	if err == nil && value != nil {
+		sg.token = string(value)
+		return true, nil
+	}
+
+	if err != nil {
+		logger.Errorf("sugon--- get token from redis error=%s", err.Error())
+	}
+
 	if sg.token == "" {
 		return false, nil
 	}
@@ -174,7 +205,7 @@ func (sg *sgclient) isTokenValid() (bool, error) {
 
 		response, err := util.LoopDoRequest(func() (*http.Response, error) {
 			//生成client 参数为默认
-			client := &http.Client{}
+			client := &http.Client{Timeout: time.Second * 10}
 			defer client.CloseIdleConnections()
 			url := sg.secEnv + "/ac/openapi/v2/tokens/state"
 			request, err := http.NewRequest(http.MethodGet, url, nil)
@@ -216,7 +247,7 @@ func (sg *sgclient) isTokenValid() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	err = json.Unmarshal((body), &tokenValidResp)
+	err = json.Unmarshal(body, &tokenValidResp)
 	if err != nil {
 		return false, err
 	}
@@ -232,7 +263,7 @@ func (sg *sgclient) SetToken() error {
 
 	anyResponse, _, err := util.Run(15, 100, 4, "SetToken", func() (any, bool, error) {
 		response, err := util.LoopDoRequest(func() (*http.Response, error) {
-			client := &http.Client{}
+			client := &http.Client{Timeout: time.Second * 10}
 			defer client.CloseIdleConnections()
 			url := sg.secEnv + "/ac/openapi/v2/tokens"
 			request, err := http.NewRequest(http.MethodPost, url, nil)
@@ -275,7 +306,7 @@ func (sg *sgclient) SetToken() error {
 	if err != nil {
 		return err
 	}
-	err = json.Unmarshal((body), &tokenResp)
+	err = json.Unmarshal(body, &tokenResp)
 	if err != nil {
 		return err
 	}
@@ -289,6 +320,12 @@ func (sg *sgclient) SetToken() error {
 	for _, cluster := range tokenResp.Data {
 		if sg.clusterId == cluster.ClusterID {
 			sg.token = cluster.Token
+
+			tokenKey := sg.redisStorage.MakeStorageKey([]string{cluster.ClusterID}, types.StoragePrefixSugonToken)
+			err = sg.redisStorage.SetWithTimeout(tokenKey, []byte(cluster.Token), types.DefaultTokenExpireTime)
+			if err != nil {
+				logger.Errorf("sugon---SetToken SetToken get token error=%s", err.Error())
+			}
 			//logger.Errorf("sugon---SetToken get token %s", tokenResp.Data[0].Token)
 			return nil
 		}
@@ -633,16 +670,20 @@ func (sg *sgclient) DeleteFile(path string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	err = json.Unmarshal((body), &makeDirResp)
+	err = json.Unmarshal(body, &makeDirResp)
 	if err != nil {
 		return false, err
 	}
 
-	if makeDirResp.Code != "0" {
+	if makeDirResp.Code != "0" && makeDirResp.Code != "911022" {
 		return false, fmt.Errorf("sugon---DeleteFile failed, path=%s, Code=%s, Message=%s", path, makeDirResp.Code, makeDirResp.Msg)
 	}
 
 	return true, nil
+}
+
+func (sg *sgclient) DeleteDir(path string) (bool, error) {
+	return sg.DeleteFile(path)
 }
 
 func (sg *sgclient) Download(path string) (io.ReadCloser, error) {
@@ -697,7 +738,7 @@ func (sg *sgclient) Download(path string) (io.ReadCloser, error) {
 }
 
 func (sg *sgclient) Upload(filePath string, reader io.Reader, totalLength int64) error {
-	if totalLength < FILE_SHARD_LIMIT {
+	if totalLength < FileShardLimit {
 		logger.Infof("sugon&&&start upload by UploadTinyFile %dB", totalLength)
 		return sg.UploadTinyFile(filePath, reader)
 	} else {
@@ -716,12 +757,13 @@ func (sg *sgclient) UploadTinyFile(filePath string, reader io.Reader) error {
 	if err != nil {
 		return err
 	}
+
 	_, _, err = util.Run(15, 100, 4, "UploadTinyFile", func() (any, bool, error) {
 		response, err := util.LoopDoRequest(func() (*http.Response, error) {
 			bodyBuf := &bytes.Buffer{}
 			bodyWriter := multipart.NewWriter(bodyBuf)
-			fileName := filepath.Base(filePath)
-			fileDir := filepath.Dir(filePath)
+			fileName := path.Base(filePath)
+			fileDir := path.Dir(filePath)
 			fileWriter, err := bodyWriter.CreateFormFile("file", fileName)
 			_, err = io.Copy(fileWriter, reader)
 			if err != nil {
@@ -763,7 +805,7 @@ func (sg *sgclient) UploadTinyFile(filePath string, reader io.Reader) error {
 			return nil, false, fmt.Errorf("sugon---response nil")
 		}
 		if response.StatusCode/100 != 2 {
-			err = fmt.Errorf("sugon---Upload TinyFile bad resp status %s", response.StatusCode)
+			err = fmt.Errorf("sugon---Upload TinyFile bad resp status %v", response.StatusCode)
 			return nil, false, err
 		}
 		defer response.Body.Close()
@@ -773,7 +815,7 @@ func (sg *sgclient) UploadTinyFile(filePath string, reader io.Reader) error {
 		if err != nil {
 			return nil, false, err
 		}
-		err = json.Unmarshal((body), &uploadResp)
+		err = json.Unmarshal(body, &uploadResp)
 		if err != nil {
 			return nil, false, err
 		}
@@ -795,13 +837,13 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 	fileName := filepath.Base(filePath)
 	fileDir := filepath.Dir(filePath)
 
-	chunkCount := int(math.Ceil(float64(totalLength) / float64(CHUNK_SIZE)))
+	chunkCount := int(math.Ceil(float64(totalLength) / float64(ChunkSize)))
 	chunkNumber := 1
 	var readLength int64 = 0
 	for {
 		n := 0
 		dataBuffer := make([]byte, 0)
-		pipeBuffer := make([]byte, READ_BUFFER_SIZE)
+		pipeBuffer := make([]byte, ReadBufferSize)
 		for {
 			nn, err := reader.Read(pipeBuffer)
 			if err != nil && err != io.EOF {
@@ -815,7 +857,7 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 			n += nn
 			readLength += int64(nn)
 			logger.Infof("n=%d nn=%d dataBuffer=%d pipeBuffer=%d readLength=%d", n, nn, len(dataBuffer), len(pipeBuffer), readLength)
-			if readLength >= totalLength || n >= CHUNK_SIZE {
+			if readLength >= totalLength || n >= ChunkSize {
 				break
 			}
 		}
@@ -835,7 +877,7 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 				}
 				logger.Infof("sugon&&&Upload shard, path=%s, totalLength=%d, currentChunkSize=%d"+
 					", chunkSize=%d,chunkNumber=%d, dataBuffer=%d, pipeBuffer=%d n=%d, length=%d",
-					filePath, totalLength, n, CHUNK_SIZE, chunkNumber, len(dataBuffer), len(pipeBuffer), n, length)
+					filePath, totalLength, n, ChunkSize, chunkNumber, len(dataBuffer), len(pipeBuffer), n, length)
 				contentType := bodyWriter.FormDataContentType()
 				bodyWriter.Close()
 				//生成要访问的url
@@ -847,7 +889,7 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 				data["relativePath"] = []string{fileName}
 				data["cover"] = []string{"cover"}
 				data["totalSize"] = []string{strconv.FormatInt(totalLength, 10)}
-				data["chunkSize"] = []string{strconv.FormatInt(int64(CHUNK_SIZE), 10)}
+				data["chunkSize"] = []string{strconv.FormatInt(int64(ChunkSize), 10)}
 				data["totalChunks"] = []string{strconv.FormatInt(int64(chunkCount), 10)}
 				data["currentChunkSize"] = []string{strconv.FormatInt(int64(length), 10)}
 				data["chunkNumber"] = []string{strconv.FormatInt(int64(chunkNumber), 10)}
@@ -877,7 +919,7 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 
 			if err != nil {
 				logger.Errorf("sugon---UploadBigFile error=%s", err.Error())
-				logger.Errorf("response", response.StatusCode)
+				logger.Errorf("response:%v", response.StatusCode)
 				return nil, false, err
 			}
 			if response == nil {
@@ -903,7 +945,7 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 			if uploadResp.Code != "0" {
 				return nil, false, fmt.Errorf("sugon---Upload failed, path=%s, totalLength=%d, currentChunkSize=%d"+
 					", chunkSize=%d, Code=%s, Message=%s, chunkNumber=%d, dataBuffer=%d, pipeBuffer=%d n=%d readlength=%d",
-					filePath, totalLength, n, CHUNK_SIZE, uploadResp.Code, uploadResp.Msg, chunkNumber, len(dataBuffer), len(pipeBuffer), n, readLength)
+					filePath, totalLength, n, ChunkSize, uploadResp.Code, uploadResp.Msg, chunkNumber, len(dataBuffer), len(pipeBuffer), n, readLength)
 			}
 			return response, false, err
 		})
@@ -912,6 +954,113 @@ func (sg *sgclient) UploadBigFile(filePath string, reader io.Reader, totalLength
 		}
 		chunkNumber += 1
 	}
+	return nil
+}
+
+func (sg *sgclient) MultiUploadObject(sourceFile string, offset int64, partSize int32, filePath string, chunkNumber,
+	totalChunks int32, totalLength int64) error {
+	if sourceFile = strings.TrimSpace(sourceFile); sourceFile == "" {
+		return fmt.Errorf("sourceFile is empty")
+	}
+
+	fd, err := os.Open(sourceFile)
+	if err != nil {
+		logger.Errorf("os.Open Error:%v", err)
+		return err
+	}
+	defer func() {
+		_ = fd.Close()
+	}()
+
+	if _, err = fd.Seek(offset, io.SeekStart); err != nil {
+		logger.Errorf("fd.Seek Error:%v", err)
+		return err
+	}
+
+	err = sg.SetToken()
+	if err != nil {
+		return err
+	}
+
+	fileName := path.Base(filePath)
+	fileDir := path.Dir(filePath)
+
+	_, _, err = util.Run(1, 2, 10, "MultiUploadObject", func() (any, bool, error) {
+		bodyBuf := &bytes.Buffer{}
+		bodyWriter := multipart.NewWriter(bodyBuf)
+		fileWriter, err := bodyWriter.CreateFormFile("file", fileName)
+		limitReader := io.LimitReader(fd, int64(partSize))
+		_, err = io.Copy(fileWriter, limitReader)
+		if err != nil {
+			return nil, true, err
+		}
+
+		contentType := bodyWriter.FormDataContentType()
+		bodyWriter.Close()
+		requestUrl := sg.apiEnv + "/openapi/v2/file/burst"
+
+		data := make(url.Values)
+		data["path"] = []string{fileDir}
+		data["filename"] = []string{fileName}
+		data["relativePath"] = []string{fileName}
+		data["cover"] = []string{"cover"}
+		data["totalSize"] = []string{strconv.FormatInt(totalLength, 10)}
+		data["chunkSize"] = []string{strconv.FormatInt(int64(ChunkSize), 10)}
+		data["totalChunks"] = []string{strconv.FormatInt(int64(totalChunks), 10)}
+		data["currentChunkSize"] = []string{strconv.FormatInt(int64(partSize), 10)}
+		data["chunkNumber"] = []string{strconv.FormatInt(int64(chunkNumber), 10)}
+
+		uri, _ := url.Parse(requestUrl)
+		values := uri.Query()
+		if values != nil {
+			for k, v := range values {
+				data[k] = v
+			}
+		}
+		uri.RawQuery = data.Encode()
+		request, err := http.NewRequest(http.MethodPost, uri.String(), bodyBuf)
+		if err != nil {
+			return nil, true, err
+		}
+
+		request.Header.Add("token", sg.token)
+		request.Header.Add("Content-Type", contentType)
+		client := &http.Client{}
+		defer client.CloseIdleConnections()
+
+		response, err := client.Do(request)
+		if err != nil {
+			return nil, false, err
+		}
+		if response == nil {
+			logger.Errorf("sugon---UploadBigFile response nil")
+			return nil, false, fmt.Errorf("sugon---response nil")
+		}
+		if response.StatusCode/100 != 2 {
+			err = fmt.Errorf("sugon---Upload bad resp status %v", response.StatusCode)
+			return nil, false, err
+		}
+		defer response.Body.Close()
+
+		body, err := io.ReadAll(response.Body)
+		var uploadResp UploadResp
+		if err != nil {
+			logger.Errorf("sugon---UploadBigFile error = %s", err.Error())
+			return nil, false, err
+		}
+		err = json.Unmarshal(body, &uploadResp)
+		if err != nil {
+			return nil, false, err
+		}
+		if uploadResp.Code != "0" {
+			return nil, false, fmt.Errorf("sugon---Upload failed, path=%s, totalLength=%d, currentChunkSize=%d"+
+				", chunkSize=%d, Code=%s, Message=%s, chunkNumber=%d",
+				filePath, totalLength, partSize, ChunkSize, uploadResp.Code, uploadResp.Msg, chunkNumber)
+		}
+
+		return nil, true, nil
+	})
+
 	return nil
 }
 
@@ -962,7 +1111,7 @@ func (sg *sgclient) MergeBigFile(filePath string) error {
 			return nil, false, fmt.Errorf("sugon---response nil")
 		}
 		if response.StatusCode/100 != 2 {
-			err = fmt.Errorf("sugon---MergeBigFile bad resp status %s", response.StatusCode)
+			err = fmt.Errorf("sugon---MergeBigFile bad resp status %v", response.StatusCode)
 		}
 		defer response.Body.Close()
 
@@ -971,7 +1120,7 @@ func (sg *sgclient) MergeBigFile(filePath string) error {
 			return nil, false, err
 		}
 		var uploadResp UploadResp
-		err = json.Unmarshal((body), &uploadResp)
+		err = json.Unmarshal(body, &uploadResp)
 		if err != nil {
 			return nil, false, err
 		}
